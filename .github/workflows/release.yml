@@ -1,38 +1,17 @@
-name: release
+name: Release
 
 on:
   push:
-    branches:
-      - main
+    tags:
+      - "v*"
 
 permissions:
   contents: write
-  pull-requests: write
 
 jobs:
-  release-please:
-    name: Release Please
+  goreleaser:
+    name: Release Go Binaries
     runs-on: ubuntu-latest
-    outputs:
-      release_created: ${{ steps.release.outputs.release_created }}
-      tag_name: ${{ steps.release.outputs.tag_name }}
-    steps:
-      - name: Run Release Please
-        uses: googleapis/release-please-action@v4
-        id: release
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          config-file: .release-please-config.json
-          manifest-file: .release-please-manifest.json
-
-  publish-artifacts:
-    name: Build & Publish Release Artifacts
-    needs: release-please
-    if: ${{ needs.release-please.outputs.release_created == 'true' }}
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -45,66 +24,11 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: Build & Package Matrix Artifacts
-        env:
-          TAG: ${{ needs.release-please.outputs.tag_name }}
-        run: |
-          set -euo pipefail
-          VERSION="${TAG#v}"
-          DIST_DIR="$(pwd)/dist"
-          mkdir -p "$DIST_DIR"
-
-          TARGETS=(
-            "linux/amd64"
-            "linux/arm64"
-            "darwin/amd64"
-            "darwin/arm64"
-            "windows/amd64"
-            "windows/arm64"
-          )
-
-          BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-          COMMIT="${GITHUB_SHA}"
-
-          for TARGET in "${TARGETS[@]}"; do
-            OS="${TARGET%%/*}"
-            ARCH="${TARGET##*/}"
-            BIN_NAME="muljax"
-            ARCHIVE_NAME="muljax_${VERSION}_${OS}_${ARCH}"
-
-            if [ "$OS" = "windows" ]; then
-              BIN_NAME="muljax.exe"
-            fi
-
-            STAGING_DIR=$(mktemp -d)
-
-            echo "::group::Building ${OS}/${ARCH}"
-            CGO_ENABLED=0 GOOS="$OS" GOARCH="$ARCH" go build \
-              -ldflags="-s -w -X github.com/muljax/cli/cmd.Version=${TAG} -X github.com/muljax/cli/cmd.Commit=${COMMIT} -X github.com/muljax/cli/cmd.BuildDate=${BUILD_DATE}" \
-              -o "${STAGING_DIR}/${BIN_NAME}" .
-
-            cp README.md LICENSE "${STAGING_DIR}/"
-
-            if [ "$OS" = "windows" ]; then
-              if command -v zip >/dev/null 2>&1; then
-                (cd "${STAGING_DIR}" && zip -q "${DIST_DIR}/${ARCHIVE_NAME}.zip" "${BIN_NAME}" README.md LICENSE)
-              else
-                (cd "${STAGING_DIR}" && python3 -m zipfile -c "${DIST_DIR}/${ARCHIVE_NAME}.zip" "${BIN_NAME}" README.md LICENSE)
-              fi
-            else
-              tar -czf "${DIST_DIR}/${ARCHIVE_NAME}.tar.gz" -C "${STAGING_DIR}" "${BIN_NAME}" README.md LICENSE
-            fi
-
-            rm -rf "${STAGING_DIR}"
-            echo "::endgroup::"
-          done
-
-          echo "Generating SHA256 checksums..."
-          (cd "$DIST_DIR" && sha256sum * > checksums.txt)
-
-      - name: Upload Artifacts to Release
+      - name: Run GoReleaser
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser
+          version: "~> v2"
+          args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ needs.release-please.outputs.tag_name }}
-        run: |
-          gh release upload "${TAG}" dist/* --clobber

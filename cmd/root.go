@@ -12,7 +12,7 @@ import (
 )
 
 var (
-	Version   = "0.6.0" // x-release-please-version
+	Version   = "dev"
 	Commit    = "none"
 	BuildDate = "unknown"
 
