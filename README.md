@@ -81,6 +81,7 @@ sequenceDiagram
 │   ├── ssh/                # Modularized SSH CA management subcommands (muljax ssh)
 │   │   ├── cert.go         # Key generation and manual certificate request
 │   │   ├── ensure.go       # OpenSSH Match exec pre-flight auto-renewal hook
+│   │   ├── hook.go         # Add or update OpenSSH configuration blocks
 │   │   ├── server.go       # Target server setup guide and CA pubkey display
 │   │   ├── setup.go        # Interactive onboarding wizard and OpenSSH config
 │   │   ├── ssh.go          # SSH root command, config helpers, and cert inspector
@@ -346,6 +347,16 @@ Fetches the CA public key from the Muljax ID API and outputs target server confi
 
 ```bash
 muljax ssh server setup
+```
+
+#### `muljax ssh hook`
+
+Configures or updates the Muljax configuration block in `~/.ssh/config`:
+
+```bash
+muljax ssh hook
+# or specify host scoping pattern
+muljax ssh hook --hosts "*.internal,*.example.com"
 ```
 
 #### `muljax ssh unhook`

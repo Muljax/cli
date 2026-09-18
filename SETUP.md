@@ -111,7 +111,7 @@ muljax ssh cert
 muljax id auth status
 ```
 
-### 5. Disabling or Resetting OpenSSH Integration
+### 5. Managing OpenSSH Integration (Hook / Unhook)
 
 If you need to remove the Muljax automated hook from your `~/.ssh/config`:
 
@@ -120,6 +120,14 @@ muljax ssh unhook
 ```
 
 This will safely and cleanly excise the `# BEGIN MULJAX SSH CONFIG` block without altering any other host configurations in `~/.ssh/config`.
+
+To re-enable or update the hook later without re-running the full setup wizard:
+
+```bash
+muljax ssh hook
+# or customize host scoping
+muljax ssh hook --hosts "*.internal,*.corp.example.com"
+```
 
 ---
 

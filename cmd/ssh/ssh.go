@@ -27,6 +27,7 @@ func NewSSHCmd(getCfg ConfigGetter) *cobra.Command {
 	sshCmd.AddCommand(newEnsureCertCmd(getCfg))
 	sshCmd.AddCommand(newStatusCmd(getCfg))
 	sshCmd.AddCommand(newServerCmd(getCfg))
+	sshCmd.AddCommand(newHookCmd(getCfg))
 	sshCmd.AddCommand(newUnhookCmd())
 
 	return sshCmd
