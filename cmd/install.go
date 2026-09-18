@@ -23,6 +23,8 @@ func NewInstallCmd() *cobra.Command {
 		Short: "Install muljax binary onto your system PATH",
 		Long: `Installs the muljax executable into a directory in your system or user PATH.
 Automatically detects appropriate installation directories for Linux, macOS, and Windows.`,
+		SilenceUsage:  true,
+		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			selfPath, err := os.Executable()
 			if err != nil {
@@ -63,7 +65,7 @@ Automatically detects appropriate installation directories for Linux, macOS, and
 				return nil
 			}
 
-			// Check if already installed
+			isReplacing := false
 			if _, err := os.Stat(destPath); err == nil {
 				if !force {
 					if srcBytes, err := os.ReadFile(selfPath); err == nil {
@@ -73,13 +75,12 @@ Automatically detects appropriate installation directories for Linux, macOS, and
 						}
 					}
 				}
-				ui.StepInfo(fmt.Sprintf("Replacing existing binary at %s...", ui.Cyan(destPath)))
+				isReplacing = true
 			}
 
 			testFile := filepath.Join(destDir, fmt.Sprintf(".test-write-%d", os.Getpid()))
 			if err := os.WriteFile(testFile, []byte(""), 0644); err != nil {
 				if os.IsPermission(err) {
-					// If default was system dir, suggest sudo or --user
 					if !userMode && destDir == "/usr/local/bin" {
 						return fmt.Errorf("permission denied writing to %s\n  Run with elevated privileges: %s\n  Or install for current user only: %s",
 							destDir,
@@ -93,10 +94,11 @@ Automatically detects appropriate installation directories for Linux, macOS, and
 			}
 			_ = os.Remove(testFile)
 
-			ui.Header("Muljax CLI Installation")
-			ui.KeyValue("Source", ui.Dim(selfPath))
-			ui.KeyValue("Destination", ui.Cyan(destPath))
-			fmt.Println()
+			if isReplacing {
+				ui.StepInfo(fmt.Sprintf("Installing binary to %s (replacing existing)...", ui.Cyan(destPath)))
+			} else {
+				ui.StepInfo(fmt.Sprintf("Installing binary to %s...", ui.Cyan(destPath)))
+			}
 
 			srcFile, err := os.Open(selfPath)
 			if err != nil {
@@ -158,7 +160,7 @@ Automatically detects appropriate installation directories for Linux, macOS, and
 						ui.Cyan(fmt.Sprintf(`export PATH="%s:$PATH"`, destDir)),
 					)
 				}
-			} else {
+			} else if !force {
 				fmt.Printf("\n%s Ready! Run '%s' to configure SSH integration.\n\n",
 					ui.Green("✓"),
 					ui.Cyan("muljax ssh setup"),

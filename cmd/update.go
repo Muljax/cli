@@ -25,6 +25,8 @@ func NewUpdateCmd() *cobra.Command {
 		Short: "Update muljax to the latest release",
 		Long: `Fetches the appropriate archive for your platform from the latest 
 Muljax release on GitHub, verifies its integrity, extracts it, and installs it.`,
+		SilenceUsage:  true,
+		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			goos := runtime.GOOS
 			goarch := runtime.GOARCH
@@ -68,8 +70,8 @@ Muljax release on GitHub, verifies its integrity, extracts it, and installs it.`
 			}
 
 			archiveName := update.ArchiveName(goos, goarch)
-			archiveDownloadURL := update.ResolveAssetURL("", targetTag, archiveName, rel.Assets)
-			checksumsURL := update.ResolveChecksumsURL("", targetTag, rel.Assets)
+			archiveDownloadURL := update.ResolveAssetURL(update.DefaultReleaseRepo, targetTag, archiveName, rel.Assets)
+			checksumsURL := update.ResolveChecksumsURL(update.DefaultReleaseRepo, targetTag, rel.Assets)
 
 			tmpDir, err := os.MkdirTemp("", "muljax-update-*")
 			if err != nil {

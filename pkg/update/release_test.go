@@ -25,6 +25,11 @@ func TestResolveAssetURL(t *testing.T) {
 	if fallback != expectedFallback {
 		t.Fatalf("expected fallback %q, got %q", expectedFallback, fallback)
 	}
+
+	emptyRepoFallback := ResolveAssetURL("", "v0.8.0", "muljax_darwin_arm64.tar.gz", assets)
+	if emptyRepoFallback != expectedFallback {
+		t.Fatalf("expected empty repo fallback %q, got %q", expectedFallback, emptyRepoFallback)
+	}
 }
 
 func TestResolveChecksumsURL(t *testing.T) {
@@ -44,6 +49,11 @@ func TestResolveChecksumsURL(t *testing.T) {
 	expectedFallback := "https://github.com/Muljax/cli/releases/download/v0.8.0/checksums.txt"
 	if fallback != expectedFallback {
 		t.Fatalf("expected fallback %q, got %q", expectedFallback, fallback)
+	}
+
+	emptyRepoFallback := ResolveChecksumsURL("", "v0.8.0", nil)
+	if emptyRepoFallback != expectedFallback {
+		t.Fatalf("expected empty repo fallback %q, got %q", expectedFallback, emptyRepoFallback)
 	}
 }
 

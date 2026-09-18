@@ -23,9 +23,11 @@ var (
 )
 
 var RootCmd = &cobra.Command{
-	Use:     "muljax",
-	Short:   "Muljax Identity Platform CLI",
-	Version: Version,
+	Use:           "muljax",
+	Short:         "Muljax Identity Platform CLI",
+	Version:       Version,
+	SilenceUsage:  true,
+	SilenceErrors: true,
 	Long: `Muljax CLI provides authentication, identity management, and automated 
 zero-friction SSH Certificate Authority integration.`,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {

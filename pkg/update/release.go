@@ -129,6 +129,9 @@ func resolveLatestTagViaRedirect(repo string) (string, error) {
 }
 
 func ResolveAssetURL(repo, tag, archiveName string, assets []Asset) string {
+	if repo == "" {
+		repo = DefaultReleaseRepo
+	}
 	for _, a := range assets {
 		if a.Name == archiveName {
 			return a.BrowserDownloadURL
@@ -138,6 +141,9 @@ func ResolveAssetURL(repo, tag, archiveName string, assets []Asset) string {
 }
 
 func ResolveChecksumsURL(repo, tag string, assets []Asset) string {
+	if repo == "" {
+		repo = DefaultReleaseRepo
+	}
 	for _, a := range assets {
 		if a.Name == "checksums.txt" {
 			return a.BrowserDownloadURL
