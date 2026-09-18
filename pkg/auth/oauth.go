@@ -61,7 +61,7 @@ func Login(cfg *config.Config) (*storage.TokenStorage, error) {
 	q.Set("response_type", "code")
 	q.Set("client_id", cfg.ClientID)
 	q.Set("redirect_uri", redirectURI)
-	q.Set("scope", "openid profile email offline_access ssh:cert:issue ssh:ca:read")
+	q.Set("scope", "openid profile email offline_access ssh:cert:issue ssh:ca:read ssh:keys:manage")
 	q.Set("state", state)
 	q.Set("code_challenge", pkce.Challenge)
 	q.Set("code_challenge_method", pkce.Method)
