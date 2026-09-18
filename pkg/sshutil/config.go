@@ -27,6 +27,22 @@ func ConfigureSSH(privKeyPath string, hostPattern string) error {
 		cliBin = path
 	}
 
+	if strings.Contains(cliBin, " ") {
+		short := GetShortPath(cliBin)
+		if !strings.Contains(short, " ") {
+			cliBin = short
+		} else if _, err := exec.LookPath("muljax"); err == nil {
+			cliBin = "muljax"
+		}
+	}
+	cliBin = filepath.ToSlash(cliBin)
+
+	// Format privKeyPath for OpenSSH: use forward slashes and quote if containing spaces
+	normPrivKey := filepath.ToSlash(privKeyPath)
+	if strings.Contains(normPrivKey, " ") {
+		normPrivKey = fmt.Sprintf(`"%s"`, normPrivKey)
+	}
+
 	if hostPattern == "" {
 		hostPattern = "*.internal"
 	}
@@ -35,7 +51,7 @@ func ConfigureSSH(privKeyPath string, hostPattern string) error {
 		ConfigBeginMarker,
 		hostPattern,
 		cliBin,
-		privKeyPath,
+		normPrivKey,
 		ConfigEndMarker,
 	)
 
@@ -62,7 +78,11 @@ func ConfigureSSH(privKeyPath string, hostPattern string) error {
 		newContent = block + "\n" + existingContent
 	}
 
-	return os.WriteFile(configPath, []byte(strings.TrimSpace(newContent)+"\n"), 0600)
+	if err := os.WriteFile(configPath, []byte(strings.TrimSpace(newContent)+"\n"), 0600); err != nil {
+		return err
+	}
+	_ = SecureFile(configPath)
+	return nil
 }
 
 func RemoveSSHConfig() error {
@@ -87,7 +107,11 @@ func RemoveSSHConfig() error {
 			end++
 		}
 		cleaned := content[:start] + content[end:]
-		return os.WriteFile(configPath, []byte(strings.TrimSpace(cleaned)+"\n"), 0600)
+		if err := os.WriteFile(configPath, []byte(strings.TrimSpace(cleaned)+"\n"), 0600); err != nil {
+			return err
+		}
+		_ = SecureFile(configPath)
+		return nil
 	}
 	return nil
 }

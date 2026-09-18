@@ -47,6 +47,7 @@ func GetDefaultPaths(keyName string) (privPath string, pubPath string, certPath 
 // Returns the formatted OpenSSH single-line public key string.
 func EnsureKeyPair(privPath string, pubPath string) (string, error) {
 	if _, err := os.Stat(privPath); err == nil {
+		_ = SecureFile(privPath)
 		// Key exists; read public key
 		pubBytes, err := os.ReadFile(pubPath)
 		if err == nil {
@@ -88,6 +89,10 @@ func EnsureKeyPair(privPath string, pubPath string) (string, error) {
 
 	if err := os.WriteFile(privPath, pem.EncodeToMemory(pemBlock), 0600); err != nil {
 		return "", fmt.Errorf("failed to write private key: %w", err)
+	}
+
+	if err := SecureFile(privPath); err != nil {
+		return "", fmt.Errorf("failed to set secure permissions on private key: %w", err)
 	}
 
 	// Marshal public key to OpenSSH authorized_keys format
