@@ -60,10 +60,16 @@ Automatically detects appropriate installation directories for Linux, macOS, and
 
 			cleanSelf, _ := filepath.Abs(selfPath)
 			cleanDest, _ := filepath.Abs(destPath)
-			if cleanSelf == cleanDest {
+			isSameBinary := cleanSelf == cleanDest
+			if runtime.GOOS == "windows" {
+				isSameBinary = strings.EqualFold(cleanSelf, cleanDest)
+			}
+			if isSameBinary {
 				ui.Step(fmt.Sprintf("muljax is already installed at %s", ui.Cyan(destPath)))
 				return nil
 			}
+
+			cleanupOldBinaries(destDir, binName)
 
 			isReplacing := false
 			if _, err := os.Stat(destPath); err == nil {
@@ -125,17 +131,10 @@ Automatically detects appropriate installation directories for Linux, macOS, and
 			}
 			tmpFile.Close()
 
-			// Replace existing file
-			if runtime.GOOS == "windows" {
-				_ = os.Remove(destPath)
-			}
-			if err := os.Rename(tmpPath, destPath); err != nil {
-				// Fallback if cross-device or permission error
-				_ = os.Remove(destPath)
-				if err := os.Rename(tmpPath, destPath); err != nil {
-					_ = os.Remove(tmpPath)
-					return fmt.Errorf("failed to finalize installation: %w", err)
-				}
+			// Replace existing file (supports replacing running executables on Windows)
+			if err := replaceBinary(tmpPath, destPath); err != nil {
+				_ = os.Remove(tmpPath)
+				return fmt.Errorf("failed to finalize installation: %w", err)
 			}
 
 			ui.Step(fmt.Sprintf("Successfully installed muljax to %s", ui.Bold(destPath)))

@@ -3,10 +3,12 @@
 package cmd
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"syscall"
+	"time"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -106,4 +108,38 @@ func notifyEnvironmentChange() {
 		5000,
 		uintptr(unsafe.Pointer(&result)),
 	)
+}
+
+func replaceBinary(tmpPath, destPath string) error {
+	if _, err := os.Stat(destPath); err == nil {
+		// On Windows, a running executable cannot be deleted or overwritten,
+		// but NTFS permits renaming it. Rename destPath to a temporary .old file.
+		oldPath := fmt.Sprintf("%s.old.%d", destPath, time.Now().UnixNano())
+		if err := os.Rename(destPath, oldPath); err != nil {
+			// If rename fails, try direct removal
+			_ = os.Remove(destPath)
+		} else {
+			// Schedule deletion on reboot if the file is currently locked/running
+			if pOld, err := windows.UTF16PtrFromString(oldPath); err == nil {
+				_ = windows.MoveFileEx(pOld, nil, windows.MOVEFILE_DELAY_UNTIL_REBOOT)
+			}
+			// Also attempt immediate removal (succeeds if not currently executing)
+			_ = os.Remove(oldPath)
+		}
+	}
+
+	if err := os.Rename(tmpPath, destPath); err != nil {
+		// If rename fails, try direct fallback
+		_ = os.Remove(destPath)
+		return os.Rename(tmpPath, destPath)
+	}
+	return nil
+}
+
+func cleanupOldBinaries(destDir, binName string) {
+	if files, err := filepath.Glob(filepath.Join(destDir, binName+".old.*")); err == nil {
+		for _, f := range files {
+			_ = os.Remove(f)
+		}
+	}
 }
