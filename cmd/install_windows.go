@@ -176,4 +176,3 @@ func printPathInstructions(destDir string) {
 		ui.Cyan(fmt.Sprintf(`[Environment]::SetEnvironmentVariable("PATH", [Environment]::GetEnvironmentVariable("PATH", "User") + ";%s", "User")`, destDir)),
 	)
 }
-
