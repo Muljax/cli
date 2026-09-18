@@ -76,6 +76,7 @@ func init() {
 	// Register subcommands
 	RootCmd.AddCommand(newVersionCmd())
 	RootCmd.AddCommand(NewInstallCmd())
+	RootCmd.AddCommand(NewUpdateCmd())
 	RootCmd.AddCommand(cmdid.NewIDCmd(func() *config.Config { return appCfg }))
 	RootCmd.AddCommand(cmdssh.NewSSHCmd(func() *config.Config { return appCfg }))
 }
