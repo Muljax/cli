@@ -5,7 +5,6 @@ import (
 	"crypto/rand"
 	"os"
 	"path/filepath"
-	"runtime"
 	"testing"
 	"time"
 
@@ -36,9 +35,7 @@ func TestEnsureKeyPair(t *testing.T) {
 	if err != nil {
 		t.Fatalf("private key stat failed: %v", err)
 	}
-	if runtime.GOOS != "windows" && privInfo.Mode().Perm() != 0600 {
-		t.Errorf("expected private key permissions 0600, got %o", privInfo.Mode().Perm())
-	}
+	assertPrivateKeyPermissions(t, privInfo)
 
 	// 2. Idempotence: calling again returns same public key without error
 	pubStr2, err := EnsureKeyPair(privPath, pubPath)
