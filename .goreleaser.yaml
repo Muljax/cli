@@ -28,7 +28,7 @@ builds:
 
 archives:
   - format: tar.gz
-    name_template: "muljax_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    name_template: "muljax_{{ .Os }}_{{ .Arch }}"
     format_overrides:
       - goos: windows
         formats:
