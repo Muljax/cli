@@ -28,35 +28,48 @@ For installation, client onboarding, and server integration instructions, see th
 ```text
 .
 ├── cmd/
-│   ├── root.go             # Root Cobra command and global flags
-│   ├── id/                 # Identity and auth commands (muljax id auth)
+│   ├── id/                 # Identity & authentication subcommands (muljax id auth)
 │   │   └── id.go
-│   └── ssh/                # SSH CA commands (muljax ssh)
-│       └── ssh.go
+│   ├── ssh/                # OpenSSH CA integration subcommands (muljax ssh)
+│   │   ├── cert.go         # Key generation & manual certificate request
+│   │   ├── ensure.go       # OpenSSH Match exec pre-flight auto-renewal hook
+│   │   ├── hook.go         # Add or update ~/.ssh/config integration blocks
+│   │   ├── server.go       # Target server setup guide & CA pubkey display
+│   │   ├── setup.go        # Interactive onboarding wizard & OpenSSH config
+│   │   ├── ssh.go          # SSH root command, config helpers, and cert inspector
+│   │   ├── status.go       # Certificate status, validity, and revocation inspector
+│   │   └── unhook.go       # Safe removal of ~/.ssh/config integration blocks
+│   ├── install.go          # Self-installation command (muljax install)
+│   ├── root.go             # Root Cobra command & global persistent flags
+│   └── update.go           # Self-update command
 ├── pkg/
-│   ├── auth/               # OAuth 2.0 PKCE implementation & token exchange
+│   ├── auth/               # OAuth 2.0 PKCE flow, loopback server, and token refresh
 │   │   ├── oauth.go
 │   │   ├── pkce.go
 │   │   └── pkce_test.go
-│   ├── client/             # Muljax ID API & SSH CA client
+│   ├── client/             # HTTP client for Muljax ID API and CA endpoints
 │   │   ├── client.go
 │   │   └── client_test.go
-│   ├── config/             # CLI persistent configuration
+│   ├── config/             # CLI persistent configuration management
 │   │   └── config.go
-│   ├── sshutil/            # Key generation, cert parsing, ~/.ssh/config modification
+│   ├── sshutil/            # Key generation, certificate parsing, and ~/.ssh/config hooks
 │   │   ├── cert.go
 │   │   ├── config.go
 │   │   ├── keys.go
+│   │   ├── permissions_other.go
+│   │   ├── permissions_windows.go
 │   │   └── sshutil_test.go
-│   ├── storage/            # OS keyring and local storage
+│   ├── storage/            # OS Keyring and secure fallback token storage
 │   │   └── token.go
-│   └── ui/                 # CLI output formatting, colors, badges
-│       └── ui.go
+│   ├── ui/                 # CLI output formatting, ANSI colors, badges, and spinners
+│   │   └── ui.go
+│   └── update/             # Release checking and self-update logic
+│       └── update.go
 ├── CONTRIBUTING.md
 ├── go.mod
 ├── go.sum
 ├── LICENSE
-├── main.go                 # Entrypoint
+├── main.go                 # Application entrypoint
 ├── README.md
 ├── SECURITY.md
 └── SETUP.md
@@ -68,6 +81,7 @@ For installation, client onboarding, and server integration instructions, see th
 
 - [Go](https://golang.org/) 1.24 or higher
 - `git`
+- [GoReleaser](https://goreleaser.com/) v2+ (optional, for testing release builds)
 
 ### Building
 
@@ -96,6 +110,28 @@ To run tests with race detection enabled:
 ```bash
 go test -race ./...
 ```
+
+### Testing Against Local Muljax ID
+
+To test CLI commands against a local Muljax ID instance (running on `http://localhost:8787`):
+
+```bash
+# Run setup against local backend
+./muljax ssh setup --endpoint http://localhost:8787 --hosts "*.local"
+
+# Or authenticate directly
+./muljax id auth login --endpoint http://localhost:8787
+```
+
+### GoReleaser Snapshot Testing
+
+To test archive creation and packaging without tagging a release:
+
+```bash
+goreleaser release --snapshot --clean
+```
+
+Binaries and archives will be generated in `dist/`.
 
 ## Code Quality
 
@@ -164,3 +200,4 @@ fix(auth): handle missing browser environment on headless linux
 docs: update OpenSSH Match exec configuration instructions
 test(client): add mock test for ca revocation parsing
 ```
+
