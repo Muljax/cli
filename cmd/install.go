@@ -140,12 +140,22 @@ Automatically detects appropriate installation directories for Linux, macOS, and
 
 			ui.Step(fmt.Sprintf("Successfully installed muljax to %s", ui.Bold(destPath)))
 
+			if runtime.GOOS == "windows" {
+				added, err := addDirToWindowsUserPath(destDir)
+				if err != nil {
+					ui.StepWarn(fmt.Sprintf("Could not automatically update user PATH: %v", err))
+				} else if added {
+					ui.Step(fmt.Sprintf("Added %s to your user PATH", ui.Cyan(destDir)))
+					ui.StepInfo("Note: Restart your terminal or command prompt for PATH changes to take effect in new sessions.")
+				}
+			}
+
 			if !isDirInPath(destDir) {
 				fmt.Println()
 				ui.StepWarn(fmt.Sprintf("Note: %s is not in your current PATH environment variable.", ui.Cyan(destDir)))
 				if runtime.GOOS == "windows" {
 					fmt.Printf("  Add it to your PATH via System Properties or PowerShell:\n  %s\n",
-						ui.Cyan(fmt.Sprintf(`[Environment]::SetEnvironmentVariable("PATH", $env:PATH + ";%s", "User")`, destDir)),
+						ui.Cyan(fmt.Sprintf(`[Environment]::SetEnvironmentVariable("PATH", [Environment]::GetEnvironmentVariable("PATH", "User") + ";%s", "User")`, destDir)),
 					)
 				} else {
 					home, _ := os.UserHomeDir()
@@ -224,8 +234,14 @@ func isDirInPath(targetDir string) bool {
 		if err != nil {
 			cleanP = filepath.Clean(p)
 		}
-		if cleanP == cleanTarget {
-			return true
+		if runtime.GOOS == "windows" {
+			if strings.EqualFold(cleanP, cleanTarget) {
+				return true
+			}
+		} else {
+			if cleanP == cleanTarget {
+				return true
+			}
 		}
 	}
 	return false
