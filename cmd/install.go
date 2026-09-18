@@ -6,7 +6,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 
 	"github.com/muljax/cli/pkg/ui"
@@ -39,10 +38,7 @@ Automatically detects appropriate installation directories for Linux, macOS, and
 				return fmt.Errorf("cannot install while running via 'go run'; compile the binary first with 'go build -o muljax .'")
 			}
 
-			binName := "muljax"
-			if runtime.GOOS == "windows" {
-				binName = "muljax.exe"
-			}
+			binName := defaultBinaryName
 
 			destDir := targetDir
 			if destDir == "" {
@@ -60,11 +56,7 @@ Automatically detects appropriate installation directories for Linux, macOS, and
 
 			cleanSelf, _ := filepath.Abs(selfPath)
 			cleanDest, _ := filepath.Abs(destPath)
-			isSameBinary := cleanSelf == cleanDest
-			if runtime.GOOS == "windows" {
-				isSameBinary = strings.EqualFold(cleanSelf, cleanDest)
-			}
-			if isSameBinary {
+			if sameFilePath(cleanSelf, cleanDest) {
 				ui.Step(fmt.Sprintf("muljax is already installed at %s", ui.Cyan(destPath)))
 				return nil
 			}
@@ -139,36 +131,12 @@ Automatically detects appropriate installation directories for Linux, macOS, and
 
 			ui.Step(fmt.Sprintf("Successfully installed muljax to %s", ui.Bold(destPath)))
 
-			if runtime.GOOS == "windows" {
-				added, err := addDirToWindowsUserPath(destDir)
-				if err != nil {
-					ui.StepWarn(fmt.Sprintf("Could not automatically update user PATH: %v", err))
-				} else if added {
-					ui.Step(fmt.Sprintf("Added %s to your user PATH", ui.Cyan(destDir)))
-					ui.StepInfo("Note: Restart your terminal or command prompt for PATH changes to take effect in new sessions.")
-				}
-			}
+			postInstallPathSetup(destDir)
 
 			if !isDirInPath(destDir) {
 				fmt.Println()
 				ui.StepWarn(fmt.Sprintf("Note: %s is not in your current PATH environment variable.", ui.Cyan(destDir)))
-				if runtime.GOOS == "windows" {
-					fmt.Printf("  Add it to your PATH via System Properties or PowerShell:\n  %s\n",
-						ui.Cyan(fmt.Sprintf(`[Environment]::SetEnvironmentVariable("PATH", [Environment]::GetEnvironmentVariable("PATH", "User") + ";%s", "User")`, destDir)),
-					)
-				} else {
-					home, _ := os.UserHomeDir()
-					shellConfig := "~/.bashrc or ~/.zshrc"
-					if _, err := os.Stat(filepath.Join(home, ".zshrc")); err == nil {
-						shellConfig = "~/.zshrc"
-					} else if _, err := os.Stat(filepath.Join(home, ".bashrc")); err == nil {
-						shellConfig = "~/.bashrc"
-					}
-					fmt.Printf("  Add it to %s:\n  %s\n",
-						ui.Dim(shellConfig),
-						ui.Cyan(fmt.Sprintf(`export PATH="%s:$PATH"`, destDir)),
-					)
-				}
+				printPathInstructions(destDir)
 			} else if !force {
 				fmt.Printf("\n%s Ready! Run '%s' to configure SSH integration.\n\n",
 					ui.Green("✓"),
@@ -187,40 +155,6 @@ Automatically detects appropriate installation directories for Linux, macOS, and
 	return cmd
 }
 
-func resolveDefaultInstallDir(userMode bool) string {
-	if runtime.GOOS == "windows" {
-		localApp := os.Getenv("LOCALAPPDATA")
-		if localApp == "" {
-			home, _ := os.UserHomeDir()
-			localApp = filepath.Join(home, "AppData", "Local")
-		}
-		return filepath.Join(localApp, "Programs", "muljax")
-	}
-
-	if userMode {
-		home, _ := os.UserHomeDir()
-		return filepath.Join(home, ".local", "bin")
-	}
-
-	// On Unix (Linux / macOS):
-	// If running as root (e.g. sudo), use /usr/local/bin
-	if os.Geteuid() == 0 {
-		return "/usr/local/bin"
-	}
-
-	// If /usr/local/bin is writable, default to /usr/local/bin
-	testFile := filepath.Join("/usr/local/bin", fmt.Sprintf(".perm-test-%d", os.Getpid()))
-	if err := os.WriteFile(testFile, []byte(""), 0644); err == nil {
-		_ = os.Remove(testFile)
-		return "/usr/local/bin"
-	}
-
-	// Fallback to user ~/.local/bin
-	home, _ := os.UserHomeDir()
-	userBin := filepath.Join(home, ".local", "bin")
-	return userBin
-}
-
 func isDirInPath(targetDir string) bool {
 	cleanTarget, err := filepath.Abs(targetDir)
 	if err != nil {
@@ -233,15 +167,10 @@ func isDirInPath(targetDir string) bool {
 		if err != nil {
 			cleanP = filepath.Clean(p)
 		}
-		if runtime.GOOS == "windows" {
-			if strings.EqualFold(cleanP, cleanTarget) {
-				return true
-			}
-		} else {
-			if cleanP == cleanTarget {
-				return true
-			}
+		if sameFilePath(cleanP, cleanTarget) {
+			return true
 		}
 	}
 	return false
 }
+

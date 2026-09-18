@@ -13,6 +13,8 @@ import (
 
 	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/registry"
+
+	"github.com/muljax/cli/pkg/ui"
 )
 
 func addDirToWindowsUserPath(targetDir string) (bool, error) {
@@ -143,3 +145,35 @@ func cleanupOldBinaries(destDir, binName string) {
 		}
 	}
 }
+
+const defaultBinaryName = "muljax.exe"
+
+func sameFilePath(a, b string) bool {
+	return strings.EqualFold(a, b)
+}
+
+func resolveDefaultInstallDir(userMode bool) string {
+	localApp := os.Getenv("LOCALAPPDATA")
+	if localApp == "" {
+		home, _ := os.UserHomeDir()
+		localApp = filepath.Join(home, "AppData", "Local")
+	}
+	return filepath.Join(localApp, "Programs", "muljax")
+}
+
+func postInstallPathSetup(destDir string) {
+	added, err := addDirToWindowsUserPath(destDir)
+	if err != nil {
+		ui.StepWarn(fmt.Sprintf("Could not automatically update user PATH: %v", err))
+	} else if added {
+		ui.Step(fmt.Sprintf("Added %s to your user PATH", ui.Cyan(destDir)))
+		ui.StepInfo("Note: Restart your terminal or command prompt for PATH changes to take effect in new sessions.")
+	}
+}
+
+func printPathInstructions(destDir string) {
+	fmt.Printf("  Add it to your PATH via System Properties or PowerShell:\n  %s\n",
+		ui.Cyan(fmt.Sprintf(`[Environment]::SetEnvironmentVariable("PATH", [Environment]::GetEnvironmentVariable("PATH", "User") + ";%s", "User")`, destDir)),
+	)
+}
+
