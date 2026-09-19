@@ -12,6 +12,7 @@ import (
 )
 
 type CertMetadata struct {
+	SavedKeyID            string   `json:"saved_key_id,omitempty"`
 	Endpoint              string   `json:"endpoint"`
 	Serial                string   `json:"serial"`
 	KeyID                 string   `json:"key_id"`

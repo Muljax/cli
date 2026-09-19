@@ -125,14 +125,23 @@ func newSetupCmd(getCfg ConfigGetter) *cobra.Command {
 				ui.Step("Active Muljax session verified")
 			}
 
-			// 3. Issue certificate
+			// 3. Ensure public key is registered with account
+			ui.StepInfo("Registering SSH public key with account...")
+			savedKeyID, err := apiClient.EnsureSavedKey("", pubKey)
+			if err != nil {
+				ui.StepWarn(fmt.Sprintf("Could not register saved key (%v), proceeding with ad-hoc key", err))
+			} else {
+				ui.Step(fmt.Sprintf("Public key registered with account (ID: %s)", ui.Cyan(savedKeyID)))
+			}
+
+			// 4. Issue certificate
 			ui.StepInfo("Requesting signed SSH certificate from CA...")
-			issued, err := apiClient.IssueCertificate(pubKey, 28800, nil)
+			issued, err := apiClient.IssueCertificate(savedKeyID, pubKey, 28800, nil)
 			if err != nil {
 				return fmt.Errorf("failed to issue certificate: %w", err)
 			}
 
-			if err := saveCertWithMeta(certPath, issued, cfg.Endpoint); err != nil {
+			if err := saveCertWithMeta(certPath, issued, cfg.Endpoint, savedKeyID); err != nil {
 				return fmt.Errorf("failed to save certificate: %w", err)
 			}
 
@@ -145,7 +154,7 @@ func newSetupCmd(getCfg ConfigGetter) *cobra.Command {
 				ui.ArrowIcon(),
 				time.Unix(issued.ValidBefore, 0).Format("02 Jan 15:04 MST"))
 
-			// 4. Configure ~/.ssh/config
+			// 5. Configure ~/.ssh/config
 			if err := sshutil.ConfigureSSH(privPath, hostPattern); err != nil {
 				return fmt.Errorf("failed to configure ~/.ssh/config: %w", err)
 			}

@@ -106,3 +106,121 @@ func TestGetValidAccessToken_Refresh(t *testing.T) {
 		t.Errorf("unexpected error message: %v", err)
 	}
 }
+
+func TestEnsureSavedKey_And_IssueCertificate(t *testing.T) {
+	testPubKey := "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGt6Ptestkey test-comment"
+	savedKeyUUID := "key-uuid-1234"
+
+	var registeredKey bool
+	var issuedWithSavedKey bool
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
+		if r.URL.Path == "/api/ssh/keys" {
+			if r.Method == http.MethodGet {
+				if registeredKey {
+					_ = json.NewEncoder(w).Encode(ListKeysResponse{
+						Keys: []SshKey{
+							{
+								ID:          savedKeyUUID,
+								Name:        "test-host (muljax-cli)",
+								PublicKey:   testPubKey,
+								Fingerprint: "SHA256:fingerprint",
+							},
+						},
+					})
+				} else {
+					_ = json.NewEncoder(w).Encode(ListKeysResponse{
+						Keys: []SshKey{},
+					})
+				}
+				return
+			} else if r.Method == http.MethodPost {
+				var req RegisterKeyRequest
+				_ = json.NewDecoder(r.Body).Decode(&req)
+				registeredKey = true
+				w.WriteHeader(http.StatusCreated)
+				_ = json.NewEncoder(w).Encode(RegisterKeyResponse{
+					Key: SshKey{
+						ID:          savedKeyUUID,
+						Name:        req.Name,
+						PublicKey:   req.PublicKey,
+						Fingerprint: "SHA256:fingerprint",
+					},
+				})
+				return
+			}
+		}
+
+		if r.URL.Path == "/api/ssh/certs/issue" && r.Method == http.MethodPost {
+			var req IssueCertRequest
+			_ = json.NewDecoder(r.Body).Decode(&req)
+			if req.SavedKeyID == savedKeyUUID {
+				issuedWithSavedKey = true
+			}
+			w.WriteHeader(http.StatusCreated)
+			_ = json.NewEncoder(w).Encode(IssueCertResponse{
+				Certificate: "ssh-ed25519-cert-v01@openssh.com test-cert",
+				Serial:      "1001",
+				KeyID:       "user@example.com",
+				Principals:  []string{"user"},
+				ValidAfter:  time.Now().Unix(),
+				ValidBefore: time.Now().Add(8 * time.Hour).Unix(),
+			})
+			return
+		}
+
+		http.NotFound(w, r)
+	}))
+	defer server.Close()
+
+	cfg := &config.Config{
+		Endpoint: server.URL,
+		ClientID: "test-client",
+	}
+	c := New(cfg)
+
+	// Save active token in storage
+	ts := &storage.TokenStorage{
+		AccessToken: "active_token",
+		ExpiresAt:   time.Now().Add(1 * time.Hour),
+	}
+	if err := storage.SaveTokens(ts); err != nil {
+		t.Fatalf("failed to save tokens: %v", err)
+	}
+	defer func() { _ = storage.ClearTokens() }()
+
+	// 1. EnsureSavedKey should register key
+	keyID, err := c.EnsureSavedKey("my-test-key", testPubKey)
+	if err != nil {
+		t.Fatalf("EnsureSavedKey failed: %v", err)
+	}
+	if keyID != savedKeyUUID {
+		t.Errorf("expected keyID %s, got %s", savedKeyUUID, keyID)
+	}
+	if !registeredKey {
+		t.Errorf("expected key to be registered via POST /keys")
+	}
+
+	// 2. Second call should find existing key without re-registering
+	keyID2, err := c.EnsureSavedKey("my-test-key", testPubKey)
+	if err != nil {
+		t.Fatalf("EnsureSavedKey second call failed: %v", err)
+	}
+	if keyID2 != savedKeyUUID {
+		t.Errorf("expected keyID %s on second call, got %s", savedKeyUUID, keyID2)
+	}
+
+	// 3. Issue certificate using savedKeyID
+	certResp, err := c.IssueCertificate(keyID, testPubKey, 28800, nil)
+	if err != nil {
+		t.Fatalf("IssueCertificate failed: %v", err)
+	}
+	if !issuedWithSavedKey {
+		t.Errorf("expected certificate to be issued with savedKeyID %s", savedKeyUUID)
+	}
+	if certResp.Certificate == "" {
+		t.Errorf("expected non-empty certificate")
+	}
+}

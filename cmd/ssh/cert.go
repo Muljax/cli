@@ -42,12 +42,17 @@ func newLoginCmd(getCfg ConfigGetter) *cobra.Command {
 			}
 
 			apiClient := client.New(cfg)
-			issued, err := apiClient.IssueCertificate(pubKey, 28800, nil)
+			savedKeyID, err := apiClient.EnsureSavedKey("", pubKey)
+			if err != nil {
+				ui.StepWarn(fmt.Sprintf("Could not register saved key (%v), proceeding with ad-hoc key", err))
+			}
+
+			issued, err := apiClient.IssueCertificate(savedKeyID, pubKey, 28800, nil)
 			if err != nil {
 				return fmt.Errorf("failed to issue certificate: %w", err)
 			}
 
-			if err := saveCertWithMeta(certPath, issued, cfg.Endpoint); err != nil {
+			if err := saveCertWithMeta(certPath, issued, cfg.Endpoint, savedKeyID); err != nil {
 				return err
 			}
 
@@ -83,12 +88,20 @@ func newCertCmd(getCfg ConfigGetter) *cobra.Command {
 				}
 
 				apiClient := client.New(cfg)
-				issued, err := apiClient.IssueCertificate(pubKey, ttlHours*3600, nil)
+				meta, _ := sshutil.LoadCertMetadata(certPath)
+				var savedKeyID string
+				if meta != nil && meta.SavedKeyID != "" {
+					savedKeyID = meta.SavedKeyID
+				} else {
+					savedKeyID, _ = apiClient.EnsureSavedKey("", pubKey)
+				}
+
+				issued, err := apiClient.IssueCertificate(savedKeyID, pubKey, ttlHours*3600, nil)
 				if err != nil {
 					return err
 				}
 
-				if err := saveCertWithMeta(certPath, issued, cfg.Endpoint); err != nil {
+				if err := saveCertWithMeta(certPath, issued, cfg.Endpoint, savedKeyID); err != nil {
 					return err
 				}
 

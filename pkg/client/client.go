@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -21,7 +22,8 @@ type Client struct {
 }
 
 type IssueCertRequest struct {
-	PublicKey  string   `json:"publicKey"`
+	SavedKeyID string   `json:"savedKeyId,omitempty"`
+	PublicKey  string   `json:"publicKey,omitempty"`
 	TTL        int      `json:"ttl,omitempty"`
 	Principals []string `json:"principals,omitempty"`
 	Comment    string   `json:"comment,omitempty"`
@@ -38,6 +40,33 @@ type IssueCertResponse struct {
 	CaFingerprint string   `json:"caFingerprint"`
 	Error         string   `json:"error,omitempty"`
 	Message       string   `json:"message,omitempty"`
+}
+
+type SshKey struct {
+	ID          string `json:"id"`
+	UserID      string `json:"userId"`
+	Name        string `json:"name"`
+	PublicKey   string `json:"publicKey"`
+	Fingerprint string `json:"fingerprint"`
+	CreatedAt   int64  `json:"createdAt"`
+	LastUsedAt  *int64 `json:"lastUsedAt"`
+}
+
+type ListKeysResponse struct {
+	Keys    []SshKey `json:"keys"`
+	Error   string   `json:"error,omitempty"`
+	Message string   `json:"message,omitempty"`
+}
+
+type RegisterKeyRequest struct {
+	Name      string `json:"name"`
+	PublicKey string `json:"publicKey"`
+}
+
+type RegisterKeyResponse struct {
+	Key     SshKey `json:"key"`
+	Error   string `json:"error,omitempty"`
+	Message string `json:"message,omitempty"`
 }
 
 func New(cfg *config.Config) *Client {
@@ -95,13 +124,233 @@ func (c *Client) getSSHUrls(subpath string) []string {
 	}
 }
 
-func (c *Client) IssueCertificate(pubKey string, ttl int, principals []string) (*IssueCertResponse, error) {
+func (c *Client) ListKeys() ([]SshKey, error) {
+	accessToken, err := c.GetValidAccessToken()
+	if err != nil {
+		return nil, err
+	}
+
+	urls := c.getSSHUrls("/keys")
+	var lastErr error
+
+	for _, endpoint := range urls {
+		req, err := http.NewRequest(http.MethodGet, endpoint, nil)
+		if err != nil {
+			return nil, err
+		}
+
+		req.Header.Set("Accept", "application/json")
+		req.Header.Set("Authorization", "Bearer "+accessToken)
+
+		resp, err := c.HTTPClient.Do(req)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+
+		respBytes, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if err != nil {
+			lastErr = err
+			continue
+		}
+
+		if resp.StatusCode == http.StatusNotFound {
+			lastErr = fmt.Errorf("keys endpoint not found (HTTP 404) at %s", endpoint)
+			continue
+		}
+
+		var listResp ListKeysResponse
+		if err := json.Unmarshal(respBytes, &listResp); err != nil {
+			return nil, fmt.Errorf("failed to parse keys response (HTTP %d): %s", resp.StatusCode, string(respBytes))
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			msg := listResp.Error
+			if listResp.Message != "" {
+				msg = listResp.Message
+			}
+			if msg == "" {
+				msg = fmt.Sprintf("HTTP %d", resp.StatusCode)
+			}
+			return nil, fmt.Errorf("failed to list SSH keys: %s", msg)
+		}
+
+		return listResp.Keys, nil
+	}
+
+	return nil, lastErr
+}
+
+func (c *Client) RegisterKey(name, pubKey string) (*SshKey, error) {
+	accessToken, err := c.GetValidAccessToken()
+	if err != nil {
+		return nil, err
+	}
+
+	reqBody := RegisterKeyRequest{
+		Name:      name,
+		PublicKey: strings.TrimSpace(pubKey),
+	}
+
+	bodyBytes, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, err
+	}
+
+	urls := c.getSSHUrls("/keys")
+	var lastErr error
+
+	for _, endpoint := range urls {
+		req, err := http.NewRequest(http.MethodPost, endpoint, bytes.NewReader(bodyBytes))
+		if err != nil {
+			return nil, err
+		}
+
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Accept", "application/json")
+		req.Header.Set("Authorization", "Bearer "+accessToken)
+
+		resp, err := c.HTTPClient.Do(req)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+
+		respBytes, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if err != nil {
+			lastErr = err
+			continue
+		}
+
+		if resp.StatusCode == http.StatusNotFound {
+			lastErr = fmt.Errorf("register key endpoint not found (HTTP 404) at %s", endpoint)
+			continue
+		}
+
+		var regResp RegisterKeyResponse
+		if err := json.Unmarshal(respBytes, &regResp); err != nil {
+			return nil, fmt.Errorf("failed to parse register key response (HTTP %d): %s", resp.StatusCode, string(respBytes))
+		}
+
+		if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
+			msg := regResp.Error
+			if regResp.Message != "" {
+				msg = regResp.Message
+			}
+			if msg == "" {
+				msg = fmt.Sprintf("HTTP %d", resp.StatusCode)
+			}
+			return nil, fmt.Errorf("failed to register SSH key: %s", msg)
+		}
+
+		return &regResp.Key, nil
+	}
+
+	return nil, lastErr
+}
+
+func (c *Client) DeleteKey(keyID string) error {
+	accessToken, err := c.GetValidAccessToken()
+	if err != nil {
+		return err
+	}
+
+	urls := c.getSSHUrls("/keys/" + keyID)
+	var lastErr error
+
+	for _, endpoint := range urls {
+		req, err := http.NewRequest(http.MethodDelete, endpoint, nil)
+		if err != nil {
+			return err
+		}
+
+		req.Header.Set("Accept", "application/json")
+		req.Header.Set("Authorization", "Bearer "+accessToken)
+
+		resp, err := c.HTTPClient.Do(req)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		resp.Body.Close()
+
+		if resp.StatusCode == http.StatusNotFound {
+			lastErr = fmt.Errorf("key not found (HTTP 404)")
+			continue
+		}
+
+		if resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusOK {
+			return fmt.Errorf("failed to delete SSH key (HTTP %d)", resp.StatusCode)
+		}
+
+		return nil
+	}
+
+	return lastErr
+}
+
+func normalizeKeyForComparison(keyStr string) string {
+	parts := strings.Fields(strings.TrimSpace(keyStr))
+	if len(parts) >= 2 {
+		return parts[0] + " " + parts[1]
+	}
+	return strings.TrimSpace(keyStr)
+}
+
+func (c *Client) EnsureSavedKey(name, pubKey string) (string, error) {
+	normPub := normalizeKeyForComparison(pubKey)
+
+	// 1. Check existing keys
+	keys, err := c.ListKeys()
+	if err == nil {
+		for _, k := range keys {
+			if normalizeKeyForComparison(k.PublicKey) == normPub {
+				return k.ID, nil
+			}
+		}
+	}
+
+	// 2. Register key if not found
+	keyName := strings.TrimSpace(name)
+	if keyName == "" {
+		hostname, err := os.Hostname()
+		if err == nil && hostname != "" {
+			keyName = fmt.Sprintf("%s (muljax-cli)", hostname)
+		} else {
+			keyName = "muljax-cli-key"
+		}
+	}
+
+	registered, err := c.RegisterKey(keyName, pubKey)
+	if err == nil && registered.ID != "" {
+		return registered.ID, nil
+	}
+
+	// 3. If register failed (e.g. 409 conflict), retry list to find it
+	if keysRetry, listErr := c.ListKeys(); listErr == nil {
+		for _, k := range keysRetry {
+			if normalizeKeyForComparison(k.PublicKey) == normPub {
+				return k.ID, nil
+			}
+		}
+	}
+
+	if err != nil {
+		return "", err
+	}
+	return "", errors.New("failed to ensure saved SSH key")
+}
+
+func (c *Client) IssueCertificate(savedKeyID string, pubKey string, ttl int, principals []string) (*IssueCertResponse, error) {
 	accessToken, err := c.GetValidAccessToken()
 	if err != nil {
 		return nil, err
 	}
 
 	reqBody := IssueCertRequest{
+		SavedKeyID: savedKeyID,
 		PublicKey:  pubKey,
 		TTL:        ttl,
 		Principals: principals,

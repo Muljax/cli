@@ -108,7 +108,15 @@ func newEnsureCertCmd(getCfg ConfigGetter) *cobra.Command {
 			}
 
 			apiClient := client.New(cfg)
-			issued, err := apiClient.IssueCertificate(pubKey, 28800, nil)
+			meta, _ := sshutil.LoadCertMetadata(certPath)
+			var savedKeyID string
+			if meta != nil && meta.SavedKeyID != "" {
+				savedKeyID = meta.SavedKeyID
+			} else {
+				savedKeyID, _ = apiClient.EnsureSavedKey("", pubKey)
+			}
+
+			issued, err := apiClient.IssueCertificate(savedKeyID, pubKey, 28800, nil)
 			if err != nil {
 				if !quiet {
 					var oauthErr *auth.OAuthError
@@ -121,7 +129,7 @@ func newEnsureCertCmd(getCfg ConfigGetter) *cobra.Command {
 				return nil
 			}
 
-			if err := saveCertWithMeta(certPath, issued, cfg.Endpoint); err != nil {
+			if err := saveCertWithMeta(certPath, issued, cfg.Endpoint, savedKeyID); err != nil {
 				if !quiet {
 					ui.StepError(fmt.Sprintf("Failed to save certificate: %v", err))
 				}

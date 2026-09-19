@@ -41,11 +41,12 @@ func resolveEndpoint(cfg *config.Config, certPath string) {
 	}
 }
 
-func saveCertWithMeta(certPath string, issued *client.IssueCertResponse, endpoint string) error {
+func saveCertWithMeta(certPath string, issued *client.IssueCertResponse, endpoint string, savedKeyID string) error {
 	if err := sshutil.SaveCertificate(certPath, issued.Certificate); err != nil {
 		return err
 	}
 	return sshutil.SaveCertMetadata(certPath, &sshutil.CertMetadata{
+		SavedKeyID:    savedKeyID,
 		Endpoint:      endpoint,
 		Serial:        issued.Serial,
 		KeyID:         issued.KeyID,
