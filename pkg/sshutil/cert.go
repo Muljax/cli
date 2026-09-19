@@ -1,6 +1,7 @@
 package sshutil
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -36,17 +37,32 @@ func ReadCertificate(certPath string) (*ssh.Certificate, error) {
 		return nil, err
 	}
 
+	// Try ParseAuthorizedKey first
 	pubKey, _, _, _, err := ssh.ParseAuthorizedKey(data)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse certificate: %w", err)
+	if err == nil {
+		if cert, ok := pubKey.(*ssh.Certificate); ok {
+			return cert, nil
+		}
 	}
 
-	cert, ok := pubKey.(*ssh.Certificate)
-	if !ok {
-		return nil, errors.New("file is a public key, not an OpenSSH certificate")
+	// Fallback: parse single-line certificate "<type> <base64> [comment]" via ssh.ParsePublicKey
+	fields := strings.Fields(string(data))
+	if len(fields) >= 2 {
+		rawBytes, decErr := base64.StdEncoding.DecodeString(fields[1])
+		if decErr != nil {
+			return nil, fmt.Errorf("base64 decode error: %w", decErr)
+		}
+		parsedKey, parseErr := ssh.ParsePublicKey(rawBytes)
+		if parseErr != nil {
+			return nil, fmt.Errorf("ssh.ParsePublicKey error: %w", parseErr)
+		}
+		if cert, ok := parsedKey.(*ssh.Certificate); ok {
+			return cert, nil
+		}
+		return nil, errors.New("parsed key is not a certificate")
 	}
 
-	return cert, nil
+	return nil, errors.New("file is not a valid OpenSSH certificate")
 }
 
 func IsCertificateValid(cert *ssh.Certificate, minRemaining time.Duration) bool {
