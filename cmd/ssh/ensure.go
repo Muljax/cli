@@ -1,10 +1,11 @@
 package ssh
 
 import (
+	"errors"
 	"fmt"
-	"os"
 	"time"
 
+	"github.com/muljax/cli/pkg/auth"
 	"github.com/muljax/cli/pkg/client"
 	"github.com/muljax/cli/pkg/sshutil"
 	"github.com/muljax/cli/pkg/ui"
@@ -23,7 +24,7 @@ func newEnsureCertCmd(getCfg ConfigGetter) *cobra.Command {
 			privPath, pubPath, certPath, err := sshutil.GetDefaultPaths(cfg.KeyName)
 			if err != nil {
 				if !quiet {
-					fmt.Fprintf(os.Stderr, "%s muljax: path error: %v\n", ui.ErrorIcon(), err)
+					ui.StepError(fmt.Sprintf("Path error: %v", err))
 				}
 				return nil
 			}
@@ -101,7 +102,7 @@ func newEnsureCertCmd(getCfg ConfigGetter) *cobra.Command {
 			pubKey, err := sshutil.EnsureKeyPair(privPath, pubPath)
 			if err != nil {
 				if !quiet {
-					fmt.Fprintf(os.Stderr, "%s muljax: key error: %v\n", ui.ErrorIcon(), err)
+					ui.StepError(fmt.Sprintf("Key error: %v", err))
 				}
 				return nil
 			}
@@ -110,14 +111,19 @@ func newEnsureCertCmd(getCfg ConfigGetter) *cobra.Command {
 			issued, err := apiClient.IssueCertificate(pubKey, 28800, nil)
 			if err != nil {
 				if !quiet {
-					fmt.Fprintf(os.Stderr, "%s [muljax] Certificate auto-renewal failed: %v\nRun 'muljax ssh login' to re-authenticate.\n", ui.WarningIcon(), err)
+					var oauthErr *auth.OAuthError
+					if errors.As(err, &oauthErr) {
+						ui.StepWarn(fmt.Sprintf("Certificate auto-renewal failed: %s", oauthErr.FriendlyMessage()))
+					} else {
+						ui.StepWarn(fmt.Sprintf("Certificate auto-renewal failed: %v", err))
+					}
 				}
 				return nil
 			}
 
 			if err := saveCertWithMeta(certPath, issued, cfg.Endpoint); err != nil {
 				if !quiet {
-					fmt.Fprintf(os.Stderr, "%s failed to save certificate: %v\n", ui.ErrorIcon(), err)
+					ui.StepError(fmt.Sprintf("Failed to save certificate: %v", err))
 				}
 				return nil
 			}

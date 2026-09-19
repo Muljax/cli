@@ -1,11 +1,16 @@
 package client
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
+	"time"
 
+	"github.com/muljax/cli/pkg/auth"
 	"github.com/muljax/cli/pkg/config"
+	"github.com/muljax/cli/pkg/storage"
 )
 
 func TestCheckRevocation(t *testing.T) {
@@ -53,5 +58,51 @@ serial: 999999999
 	}
 	if lineNum != 0 {
 		t.Errorf("expected lineNum 0 for non-revoked serial, got %d", lineNum)
+	}
+}
+
+func TestGetValidAccessToken_Refresh(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/oauth/token" {
+			_ = r.ParseForm()
+			if r.Form.Get("refresh_token") == "lockdown_token" {
+				w.Header().Set("Content-Type", "application/json")
+				w.Header().Set("Cache-Control", "no-store")
+				w.Header().Set("Pragma", "no-cache")
+				w.WriteHeader(http.StatusBadRequest)
+				_ = json.NewEncoder(w).Encode(auth.TokenResponse{
+					Error:     auth.ErrCodeInvalidGrant,
+					ErrorDesc: "Refresh token blocked for non-admin during lockdown",
+				})
+				return
+			}
+		}
+		http.NotFound(w, r)
+	}))
+	defer server.Close()
+
+	cfg := &config.Config{
+		Endpoint: server.URL,
+		ClientID: "test-client",
+	}
+	c := New(cfg)
+
+	// Save expired token in storage
+	ts := &storage.TokenStorage{
+		AccessToken:  "expired_access_token",
+		RefreshToken: "lockdown_token",
+		ExpiresAt:    time.Now().Add(-1 * time.Hour),
+	}
+	if err := storage.SaveTokens(ts); err != nil {
+		t.Fatalf("failed to save test tokens: %v", err)
+	}
+	defer func() { _ = storage.ClearTokens() }()
+
+	_, err := c.GetValidAccessToken()
+	if err == nil {
+		t.Fatalf("expected error from GetValidAccessToken during lockdown refresh, got nil")
+	}
+	if !strings.Contains(err.Error(), "session expired, revoked, or restricted during lockdown") {
+		t.Errorf("unexpected error message: %v", err)
 	}
 }

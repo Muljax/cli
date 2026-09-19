@@ -2,6 +2,7 @@ package ssh
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
@@ -112,6 +113,11 @@ func newSetupCmd(getCfg ConfigGetter) *cobra.Command {
 			if err != nil {
 				ui.StepInfo("No active session found. Launching browser authentication...")
 				if _, err := auth.Login(cfg); err != nil {
+					var oauthErr *auth.OAuthError
+					if errors.As(err, &oauthErr) {
+						ui.StepError(fmt.Sprintf("Authentication failed: %s", oauthErr.FriendlyMessage()))
+						return oauthErr
+					}
 					return fmt.Errorf("authentication failed: %w", err)
 				}
 				ui.Step("Authentication successful")

@@ -1,6 +1,7 @@
 package id
 
 import (
+	"errors"
 	"fmt"
 	"time"
 
@@ -31,6 +32,11 @@ func NewIDCmd(getCfg ConfigGetter) *cobra.Command {
 			cfg := getCfg()
 			ts, err := auth.Login(cfg)
 			if err != nil {
+				var oauthErr *auth.OAuthError
+				if errors.As(err, &oauthErr) {
+					ui.StepError(fmt.Sprintf("Authentication failed: %s", oauthErr.FriendlyMessage()))
+					return oauthErr
+				}
 				return err
 			}
 			ui.Step(fmt.Sprintf("Successfully authenticated with %s", ui.Cyan(cfg.Endpoint)))

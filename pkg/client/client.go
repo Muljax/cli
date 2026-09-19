@@ -63,7 +63,19 @@ func (c *Client) GetValidAccessToken() (string, error) {
 	// Token is expired or expiring in < 60s, refresh it
 	refreshed, err := auth.RefreshAccessToken(c.Config, ts)
 	if err != nil {
-		return "", fmt.Errorf("session expired or refresh failed (%w); please run 'muljax ssh login'", err)
+		var oauthErr *auth.OAuthError
+		if errors.As(err, &oauthErr) {
+			if oauthErr.IsInvalidGrant() {
+				return "", fmt.Errorf("session expired, revoked, or restricted during lockdown (%s); please run 'muljax id auth login' or 'muljax ssh login'", oauthErr.Code)
+			}
+			if oauthErr.IsTemporarilyUnavailable() {
+				return "", fmt.Errorf("Muljax server is temporarily unavailable or in maintenance/lockdown mode: %w", oauthErr)
+			}
+			if oauthErr.IsAccessDenied() {
+				return "", fmt.Errorf("access denied by server policy: %w", oauthErr)
+			}
+		}
+		return "", fmt.Errorf("session expired or refresh failed (%w); please run 'muljax id auth login' or 'muljax ssh login'", err)
 	}
 
 	return refreshed.AccessToken, nil
