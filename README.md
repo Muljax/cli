@@ -21,6 +21,9 @@ The official command-line interface for the [Muljax Identity Platform](https://g
 > [!WARNING]
 > Muljax CLI is pre-1.0 and, as such, may ship breaking releases without a major semver bump.
 
+> [!IMPORTANT]
+> **Service Compatibility**: The Muljax CLI is designed strictly to operate against the **latest version** of the Muljax ID API and Dashboard. Backward compatibility with older, unmaintained server versions is not guaranteed or supported. Always ensure your server instance and CLI are running latest releases.
+
 ## Overview
 
 The Muljax CLI (`muljax`) provides authentication, identity management, and automated zero-friction OpenSSH Certificate Authority (CA) client integration for the Muljax Identity Platform.
