@@ -22,11 +22,14 @@ const (
 	ErrCodeInvalidRequestObject   = "invalid_request_object"
 )
 
-// RFC 6749 §5.2 Token Endpoint error codes
+// RFC 6749 §5.2 and RFC 8628 §3.5 Token Endpoint error codes
 const (
-	ErrCodeInvalidClient        = "invalid_client"
-	ErrCodeInvalidGrant         = "invalid_grant"
-	ErrCodeUnsupportedGrantType = "unsupported_grant_type"
+	ErrCodeInvalidClient          = "invalid_client"
+	ErrCodeInvalidGrant           = "invalid_grant"
+	ErrCodeUnsupportedGrantType   = "unsupported_grant_type"
+	ErrCodeAuthorizationPending   = "authorization_pending"
+	ErrCodeSlowDown               = "slow_down"
+	ErrCodeExpiredToken           = "expired_token"
 )
 
 // OAuthError represents a structured error returned from an OAuth 2.0 / OIDC authorization
@@ -77,6 +80,21 @@ func (e *OAuthError) IsInvalidGrant() bool {
 	return e != nil && e.Code == ErrCodeInvalidGrant
 }
 
+// IsAuthorizationPending indicates whether the user has not yet approved the device code (RFC 8628 §3.5).
+func (e *OAuthError) IsAuthorizationPending() bool {
+	return e != nil && e.Code == ErrCodeAuthorizationPending
+}
+
+// IsSlowDown indicates whether the client is polling faster than the allowed interval (RFC 8628 §3.5).
+func (e *OAuthError) IsSlowDown() bool {
+	return e != nil && e.Code == ErrCodeSlowDown
+}
+
+// IsExpiredToken indicates whether the device code has expired before user approval (RFC 8628 §3.5).
+func (e *OAuthError) IsExpiredToken() bool {
+	return e != nil && e.Code == ErrCodeExpiredToken
+}
+
 // FriendlyMessage returns a clean, human-readable description for end-user terminal display.
 func (e *OAuthError) FriendlyMessage() string {
 	if e == nil {
@@ -84,6 +102,15 @@ func (e *OAuthError) FriendlyMessage() string {
 	}
 
 	switch e.Code {
+	case ErrCodeAuthorizationPending:
+		return "Device authorization is pending user confirmation"
+
+	case ErrCodeSlowDown:
+		return "Polling rate limit exceeded; polling interval has been increased"
+
+	case ErrCodeExpiredToken:
+		return "Device activation code has expired; please run 'muljax id auth login' to generate a new code"
+
 	case ErrCodeTemporarilyUnavailable:
 		if e.Description != "" {
 			return fmt.Sprintf("Instance unavailable or undergoing maintenance (%s)", e.Description)
@@ -94,7 +121,7 @@ func (e *OAuthError) FriendlyMessage() string {
 		if e.Description != "" {
 			return fmt.Sprintf("Access denied by policy (%s)", e.Description)
 		}
-		return "Access denied: the authorization server or administrative policy rejected the request"
+		return "Access denied: the authorization server or user rejected the request"
 
 	case ErrCodeLoginRequired:
 		if e.Description != "" {
@@ -106,7 +133,7 @@ func (e *OAuthError) FriendlyMessage() string {
 		if e.Description != "" {
 			return fmt.Sprintf("Invalid or restricted grant (%s)", e.Description)
 		}
-		return "Authorization grant or refresh token is invalid, expired, revoked, or restricted during lockdown"
+		return "Authorization grant, device code, or refresh token is invalid, expired, revoked, or restricted during lockdown"
 
 	case ErrCodeInteractionRequired:
 		return "User interaction is required to complete authentication"

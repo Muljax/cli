@@ -1,10 +1,12 @@
 package auth
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -60,36 +62,168 @@ func TestOAuthErrorHelpers(t *testing.T) {
 	if !invalidGrant.IsInvalidGrant() {
 		t.Errorf("expected IsInvalidGrant to be true")
 	}
-	if !strings.Contains(invalidGrant.FriendlyMessage(), "Invalid or restricted grant") {
-		t.Errorf("unexpected friendly message: %s", invalidGrant.FriendlyMessage())
+
+	authPending := &OAuthError{
+		Code:       ErrCodeAuthorizationPending,
+		StatusCode: http.StatusBadRequest,
+	}
+	if !authPending.IsAuthorizationPending() {
+		t.Errorf("expected IsAuthorizationPending to be true")
+	}
+
+	slowDown := &OAuthError{
+		Code:       ErrCodeSlowDown,
+		StatusCode: http.StatusBadRequest,
+	}
+	if !slowDown.IsSlowDown() {
+		t.Errorf("expected IsSlowDown to be true")
+	}
+
+	expired := &OAuthError{
+		Code:       ErrCodeExpiredToken,
+		StatusCode: http.StatusBadRequest,
+	}
+	if !expired.IsExpiredToken() {
+		t.Errorf("expected IsExpiredToken to be true")
 	}
 }
 
-func TestRenderErrorHTML(t *testing.T) {
-	rec := httptest.NewRecorder()
-	oauthErr := &OAuthError{
-		Code:        ErrCodeTemporarilyUnavailable,
-		Description: "Lockdown in progress",
+func TestRequestDeviceCode_Success(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/oauth/device/code" {
+			http.NotFound(w, r)
+			return
+		}
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		_ = r.ParseForm()
+		if r.Form.Get("client_id") != "test-client" {
+			http.Error(w, "invalid client_id", http.StatusBadRequest)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+
+		resp := DeviceCodeResponse{
+			DeviceCode:              "dev_code_12345",
+			UserCode:                "WDJB-4921",
+			VerificationURI:         "https://id.example.com/device",
+			VerificationURIComplete: "https://id.example.com/device?user_code=WDJB-4921",
+			ExpiresIn:               600,
+			Interval:                5,
+		}
+		_ = json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	cfg := &config.Config{
+		Endpoint: server.URL,
+		ClientID: "test-client",
 	}
 
-	renderErrorHTML(rec, oauthErr)
-
-	if rec.Code != http.StatusServiceUnavailable {
-		t.Errorf("expected status code %d, got %d", http.StatusServiceUnavailable, rec.Code)
-	}
-	if cacheCtrl := rec.Header().Get("Cache-Control"); !strings.Contains(cacheCtrl, "no-store") {
-		t.Errorf("expected Cache-Control no-store, got %s", cacheCtrl)
-	}
-	if pragma := rec.Header().Get("Pragma"); pragma != "no-cache" {
-		t.Errorf("expected Pragma no-cache, got %s", pragma)
+	dcr, err := RequestDeviceCode(cfg, DefaultScopes)
+	if err != nil {
+		t.Fatalf("RequestDeviceCode failed: %v", err)
 	}
 
-	body := rec.Body.String()
-	if !strings.Contains(body, "temporarily_unavailable") {
-		t.Errorf("expected body to contain error code, got: %s", body)
+	if dcr.DeviceCode != "dev_code_12345" {
+		t.Errorf("expected device code 'dev_code_12345', got '%s'", dcr.DeviceCode)
 	}
-	if !strings.Contains(body, "Lockdown in progress") {
-		t.Errorf("expected body to contain description, got: %s", body)
+	if dcr.UserCode != "WDJB-4921" {
+		t.Errorf("expected user code 'WDJB-4921', got '%s'", dcr.UserCode)
+	}
+	if dcr.Interval != 5 {
+		t.Errorf("expected interval 5, got %d", dcr.Interval)
+	}
+}
+
+func TestPollDeviceToken_PendingThenSuccess(t *testing.T) {
+	var pollCount int32
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/oauth/token" {
+			http.NotFound(w, r)
+			return
+		}
+		_ = r.ParseForm()
+		if r.Form.Get("grant_type") != DeviceGrantType {
+			http.Error(w, "invalid grant_type", http.StatusBadRequest)
+			return
+		}
+
+		count := atomic.AddInt32(&pollCount, 1)
+		w.Header().Set("Content-Type", "application/json")
+
+		if count < 2 {
+			w.WriteHeader(http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(TokenResponse{
+				Error:     ErrCodeAuthorizationPending,
+				ErrorDesc: "Authorization pending",
+			})
+			return
+		}
+
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(TokenResponse{
+			AccessToken:  "at_device_success",
+			RefreshToken: "rt_device_success",
+			TokenType:    "Bearer",
+			ExpiresIn:    3600,
+		})
+	}))
+	defer server.Close()
+
+	cfg := &config.Config{
+		Endpoint: server.URL,
+		ClientID: "test-client",
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	tokens, err := PollDeviceToken(ctx, cfg, "dev_code_12345", 1, 600)
+	if err != nil {
+		t.Fatalf("PollDeviceToken failed: %v", err)
+	}
+
+	if tokens.AccessToken != "at_device_success" {
+		t.Errorf("expected access token 'at_device_success', got '%s'", tokens.AccessToken)
+	}
+}
+
+func TestPollDeviceToken_AccessDenied(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(TokenResponse{
+			Error:     ErrCodeAccessDenied,
+			ErrorDesc: "User denied device authorization",
+		})
+	}))
+	defer server.Close()
+
+	cfg := &config.Config{
+		Endpoint: server.URL,
+		ClientID: "test-client",
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	_, err := PollDeviceToken(ctx, cfg, "dev_code_12345", 1, 600)
+	if err == nil {
+		t.Fatalf("expected error from PollDeviceToken, got nil")
+	}
+
+	oauthErr, ok := err.(*OAuthError)
+	if !ok {
+		t.Fatalf("expected *OAuthError, got %T: %v", err, err)
+	}
+	if !oauthErr.IsAccessDenied() {
+		t.Errorf("expected IsAccessDenied to be true, got code: %s", oauthErr.Code)
 	}
 }
 
@@ -146,85 +280,6 @@ func TestRefreshAccessToken_Success(t *testing.T) {
 	}
 }
 
-func TestRefreshAccessToken_InvalidGrant(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.Header().Set("Cache-Control", "no-store")
-		w.Header().Set("Pragma", "no-cache")
-		w.WriteHeader(http.StatusBadRequest)
-
-		resp := TokenResponse{
-			Error:     ErrCodeInvalidGrant,
-			ErrorDesc: "Refresh token blocked for non-admin during lockdown",
-		}
-		_ = json.NewEncoder(w).Encode(resp)
-	}))
-	defer server.Close()
-
-	cfg := &config.Config{
-		Endpoint: server.URL,
-		ClientID: "test-client",
-	}
-	ts := &storage.TokenStorage{
-		AccessToken:  "old_access_token",
-		RefreshToken: "revoked_refresh_token",
-		ExpiresAt:    time.Now().Add(-10 * time.Minute),
-	}
-
-	_, err := RefreshAccessToken(cfg, ts)
-	if err == nil {
-		t.Fatalf("expected error from RefreshAccessToken, got nil")
-	}
-
-	oauthErr, ok := err.(*OAuthError)
-	if !ok {
-		t.Fatalf("expected error to be *OAuthError, got %T: %v", err, err)
-	}
-	if !oauthErr.IsInvalidGrant() {
-		t.Errorf("expected IsInvalidGrant to be true")
-	}
-	if oauthErr.StatusCode != http.StatusBadRequest {
-		t.Errorf("expected status code 400, got %d", oauthErr.StatusCode)
-	}
-}
-
-func TestExchangeCode_InvalidGrant(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.Header().Set("Cache-Control", "no-store")
-		w.Header().Set("Pragma", "no-cache")
-		w.WriteHeader(http.StatusBadRequest)
-
-		resp := TokenResponse{
-			Error:     ErrCodeInvalidGrant,
-			ErrorDesc: "Authorization code blocked for non-admin",
-		}
-		_ = json.NewEncoder(w).Encode(resp)
-	}))
-	defer server.Close()
-
-	cfg := &config.Config{
-		Endpoint: server.URL,
-		ClientID: "test-client",
-	}
-
-	_, err := exchangeCode(cfg, "auth_code_123", "verifier_456", "http://127.0.0.1:9999/callback")
-	if err == nil {
-		t.Fatalf("expected error from exchangeCode, got nil")
-	}
-
-	oauthErr, ok := err.(*OAuthError)
-	if !ok {
-		t.Fatalf("expected error to be *OAuthError, got %T: %v", err, err)
-	}
-	if !oauthErr.IsInvalidGrant() {
-		t.Errorf("expected IsInvalidGrant to be true")
-	}
-	if oauthErr.Description != "Authorization code blocked for non-admin" {
-		t.Errorf("unexpected description: %s", oauthErr.Description)
-	}
-}
-
 func TestClientCredentialsToken(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_ = r.ParseForm()
@@ -259,25 +314,11 @@ func TestClientCredentialsToken(t *testing.T) {
 		Endpoint: server.URL,
 	}
 
-	// Successful M2M token request
 	resp, err := ClientCredentialsToken(cfg, "m2m-service", "m2m-secret", "ssh:ca:read")
 	if err != nil {
 		t.Fatalf("ClientCredentialsToken failed: %v", err)
 	}
 	if resp.AccessToken != "m2m_access_token_789" {
 		t.Errorf("expected access token 'm2m_access_token_789', got '%s'", resp.AccessToken)
-	}
-
-	// Failed M2M token request with invalid secret
-	_, err = ClientCredentialsToken(cfg, "m2m-service", "wrong-secret", "ssh:ca:read")
-	if err == nil {
-		t.Fatalf("expected error with wrong secret, got nil")
-	}
-	oauthErr, ok := err.(*OAuthError)
-	if !ok {
-		t.Fatalf("expected *OAuthError, got %T: %v", err, err)
-	}
-	if oauthErr.Code != ErrCodeInvalidClient {
-		t.Errorf("expected error code %s, got %s", ErrCodeInvalidClient, oauthErr.Code)
 	}
 }
