@@ -66,8 +66,8 @@ func Dim(text string) string        { return colorize(ansiDim, text) }
 func Red(text string) string        { return colorize(ansiRed, text) }
 func Green(text string) string      { return colorize(ansiGreen, text) }
 func Yellow(text string) string     { return colorize(ansiYellow, text) }
-func Blue(text string) string        { return colorize(ansiBlue, text) }
-func Cyan(text string) string        { return colorize(ansiCyan, text) }
+func Blue(text string) string       { return colorize(ansiBlue, text) }
+func Cyan(text string) string       { return colorize(ansiCyan, text) }
 func BrightCyan(text string) string { return colorize(ansiBrightCyan, text) }
 
 // Badges

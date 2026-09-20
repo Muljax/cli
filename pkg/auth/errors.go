@@ -24,12 +24,12 @@ const (
 
 // RFC 6749 §5.2 and RFC 8628 §3.5 Token Endpoint error codes
 const (
-	ErrCodeInvalidClient          = "invalid_client"
-	ErrCodeInvalidGrant           = "invalid_grant"
-	ErrCodeUnsupportedGrantType   = "unsupported_grant_type"
-	ErrCodeAuthorizationPending   = "authorization_pending"
-	ErrCodeSlowDown               = "slow_down"
-	ErrCodeExpiredToken           = "expired_token"
+	ErrCodeInvalidClient        = "invalid_client"
+	ErrCodeInvalidGrant         = "invalid_grant"
+	ErrCodeUnsupportedGrantType = "unsupported_grant_type"
+	ErrCodeAuthorizationPending = "authorization_pending"
+	ErrCodeSlowDown             = "slow_down"
+	ErrCodeExpiredToken         = "expired_token"
 )
 
 // OAuthError represents a structured error returned from an OAuth 2.0 / OIDC authorization

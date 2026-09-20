@@ -18,7 +18,7 @@ import (
 )
 
 const (
-	DefaultScopes = "openid profile email offline_access ssh:cert:issue ssh:ca:read ssh:keys:manage"
+	DefaultScopes   = "openid profile email offline_access ssh:cert:issue ssh:ca:read ssh:keys:manage"
 	DeviceGrantType = "urn:ietf:params:oauth:grant-type:device_code"
 )
 
