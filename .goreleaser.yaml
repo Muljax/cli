@@ -27,7 +27,8 @@ builds:
       - -X github.com/muljax/cli/cmd.BuildDate={{.Date}}
 
 archives:
-  - format: tar.gz
+  - formats:
+      - tar.gz
     name_template: "muljax_{{ .Os }}_{{ .Arch }}"
     format_overrides:
       - goos: windows
