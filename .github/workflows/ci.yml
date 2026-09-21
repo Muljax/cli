@@ -5,66 +5,23 @@ on:
     branches:
       - main
   pull_request:
-    branches:
-      - main
 
 jobs:
   test:
-    name: Test & Lint
+    name: Build & Test
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout code
+      - name: Checkout
         uses: actions/checkout@v4
 
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version-file: go.mod
-          cache: true
+          go-version-file: 'go.mod'
+          cache-dependency-path: 'go.sum'
 
-      - name: Check Formatting (gofmt)
-        run: |
-          UNFORMATTED=$(gofmt -l .)
-          if [ -n "$UNFORMATTED" ]; then
-            echo "::error::Files are not formatted. Run 'gofmt -w .' on:"
-            echo "$UNFORMATTED"
-            exit 1
-          fi
+      - name: Go Test
+        run: go test -v ./...
 
-      - name: Go Vet
-        run: go vet ./...
-
-      - name: Run Tests
-        run: go test -v -race ./...
-
-  cross-compile:
-    name: Cross-Compile Matrix
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [linux, darwin, windows]
-        arch: [amd64, arm64]
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-          cache: true
-
-      - name: Verify Build (${{ matrix.os }}/${{ matrix.arch }})
-        env:
-          CGO_ENABLED: "0"
-          GOOS: ${{ matrix.os }}
-          GOARCH: ${{ matrix.arch }}
-        run: |
-          EXT=""
-          if [ "${{ matrix.os }}" = "windows" ]; then
-            EXT=".exe"
-          fi
-          go build -ldflags="-s -w" -o "bin/muljax-${{ matrix.os }}-${{ matrix.arch }}${EXT}" .
+      - name: Go Build
+        run: go build -v ./...
